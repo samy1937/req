@@ -11,51 +11,123 @@ import (
 	"time"
 )
 
+const (
+	two                   = 2
+	ten                   = 10
+	defaultMaxWorkers     = 150
+	defaultMaxHistorydata = 150
+)
+
+var transport = http.Transport{
+
+	DisableKeepAlives: true, // 关闭长长连接
+	Proxy:             http.ProxyFromEnvironment,
+	//	ResponseHeaderTimeout: time.Duration(2) * time.Second,
+	//DisableCompression:    true,
+	MaxIdleConnsPerHost: -1,
+	MaxIdleConns:        -1,
+	//IdleConnTimeout:       1 * time.Second,
+	//TLSHandshakeTimeout:   5 * time.Second,
+	//ExpectContinueTimeout: 1 * time.Second,
+	TLSClientConfig: &tls.Config{
+		Renegotiation:      tls.RenegotiateOnceAsClient,
+		InsecureSkipVerify: true,
+	},
+	Dial: func(netw, addr string) (net.Conn, error) {
+		c, err := net.DialTimeout(netw, addr, time.Second*8) //设置建立连接超时
+		if err != nil {
+			return nil, err
+		}
+		_ = c.SetDeadline(time.Now().Add(8 * time.Second)) //设置发送接收数据超时
+		return c, nil
+	},
+}
+
+type checkRedirectFunc func(_ *http.Request, requests []*http.Request) error
+
+func makeCheckRedirectFunc(followRedirects bool, maxRedirects int) checkRedirectFunc {
+	return func(_ *http.Request, requests []*http.Request) error {
+		if !followRedirects {
+			return http.ErrUseLastResponse
+		}
+
+		if maxRedirects == 0 {
+			if len(requests) > ten {
+				return http.ErrUseLastResponse
+			}
+
+			return nil
+		}
+
+		if len(requests) > maxRedirects {
+			return http.ErrUseLastResponse
+		}
+
+		return nil
+	}
+}
+
 // create a default client
 func newClient() *retryablehttp.Client {
 
-
-	var retryablehttpOptions = retryablehttp.DefaultOptionsSpraying
-	retryablehttpOptions.Timeout = 8 * time.Second
-	retryablehttpOptions.RetryMax = 3
-
-	var redirectFunc = func(_ *http.Request, _ []*http.Request) error {
-		return http.ErrUseLastResponse // Tell the http client to not follow redirect
-	}
-
-
 	jar, _ := cookiejar.New(nil)
-	transport := &http.Transport{
+	retryablehttpOptions := retryablehttp.DefaultOptionsSpraying
+	disableKeepAlives := true
+	maxIdleConns := 0
+	maxConnsPerHost := 0
+	maxIdleConnsPerHost := -1
 
-		DisableKeepAlives:     true, // 关闭长长连接
-		Proxy:                 http.ProxyFromEnvironment,
-		//	ResponseHeaderTimeout: time.Duration(2) * time.Second,
-		//DisableCompression:    true,
-		MaxIdleConnsPerHost:   -1,
-		MaxIdleConns:         -1,
-		//IdleConnTimeout:       1 * time.Second,
-		//TLSHandshakeTimeout:   5 * time.Second,
-		//ExpectContinueTimeout: 1 * time.Second,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
-		Dial: func(netw, addr string) (net.Conn, error) {
-			c, err := net.DialTimeout(netw, addr, time.Second*8) //设置建立连接超时
-			if err != nil {
-				return nil, err
-			}
-			_ = c.SetDeadline(time.Now().Add(8 * time.Second)) //设置发送接收数据超时
-			return c, nil
+	retryablehttpOptions.RetryWaitMax = 10 * time.Second
+	retryablehttpOptions.RetryMax = 1
+	followRedirects := false
+	maxRedirects := 0
+
+	transport := &http.Transport{
+		MaxIdleConns:        maxIdleConns,
+		MaxIdleConnsPerHost: maxIdleConnsPerHost,
+		MaxConnsPerHost:     maxConnsPerHost,
+		TLSClientConfig: &tls.Config{
+			Renegotiation:      tls.RenegotiateOnceAsClient,
+			InsecureSkipVerify: true,
 		},
+		DisableKeepAlives: disableKeepAlives,
 	}
 
-
-	client := retryablehttp.NewWithHTTPClient(&http.Client{
+	return retryablehttp.NewWithHTTPClient(&http.Client{
 		Transport:     transport,
-		Jar:       jar,
-		Timeout:   8 * time.Second,
-		CheckRedirect: redirectFunc,
+		Jar:           jar,
+		Timeout:       time.Duration(10) * time.Second,
+		CheckRedirect: makeCheckRedirectFunc(followRedirects, maxRedirects),
 	}, retryablehttpOptions)
+}
 
-	return client
+func (r *Req) GetTransport() *http.Transport {
+	if r.transport == nil {
+		r.transport = &http.Transport{
+
+			DisableKeepAlives: true, // 关闭长长连接
+			Proxy:             http.ProxyFromEnvironment,
+			//	ResponseHeaderTimeout: time.Duration(2) * time.Second,
+			//DisableCompression:    true,
+			MaxIdleConnsPerHost: -1,
+			MaxIdleConns:        -1,
+			//IdleConnTimeout:       1 * time.Second,
+			//TLSHandshakeTimeout:   5 * time.Second,
+			//ExpectContinueTimeout: 1 * time.Second,
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			Dial: func(netw, addr string) (net.Conn, error) {
+				c, err := net.DialTimeout(netw, addr, time.Second*8) //设置建立连接超时
+				if err != nil {
+					return nil, err
+				}
+				_ = c.SetDeadline(time.Now().Add(8 * time.Second)) //设置发送接收数据超时
+				return c, nil
+			},
+		}
+
+		return r.transport
+	}
+	return r.transport
 }
 
 // Client return the default underlying http client

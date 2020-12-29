@@ -31,8 +31,8 @@ func TestSetClient(t *testing.T) {
 		t.Errorf("error after set client to nil: %v", err)
 	}
 
-	client = Client()
-	if trans, ok := client.Transport.(*http.Transport); ok {
+	c := Client()
+	if trans, ok := c.HTTPClient.Transport.(*http.Transport); ok {
 		trans.MaxIdleConns = 1
 		trans.DisableKeepAlives = true
 		_, err = Get(ts.URL)

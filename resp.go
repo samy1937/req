@@ -31,10 +31,8 @@ type Resp struct {
 	err              error // delayed error
 }
 
-
-
 func (r *Resp) HandleDecompression(bodyOrig []byte) (bodyDec []byte, err error) {
-	if r.req == nil || r.req.Request == nil   {
+	if r.req == nil || r.req.Request == nil {
 		return bodyOrig, nil
 	}
 
@@ -89,14 +87,14 @@ func (r *Resp) ToBytes() ([]byte, error) {
 		r.err = err
 		_, copyErr := io.Copy(ioutil.Discard, r.resp.Body)
 		if copyErr != nil {
-			return nil,copyErr
+			return nil, copyErr
 		}
-		return nil,errors.Wrap(err, "could not read http body")
+		return nil, errors.Wrap(err, "could not read http body")
 	}
 
 	respBody, err = r.HandleDecompression(respBody)
 	if err != nil {
-		return nil,errors.Wrap(err, "could not decompress http body")
+		return nil, errors.Wrap(err, "could not decompress http body")
 	}
 
 	r.respBody = respBody

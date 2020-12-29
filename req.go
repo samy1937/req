@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	retryablehttp "github.com/projectdiscovery/retryablehttp-go"
 	"io"
 	"io/ioutil"
 	"mime/multipart"
@@ -19,7 +20,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	retryablehttp "github.com/projectdiscovery/retryablehttp-go"
 )
 
 // default *Req
@@ -43,6 +43,18 @@ type QueryParam map[string]interface{}
 
 // Host is used for set request's Host
 type Host string
+
+type Redirect int
+
+const (
+	DisableAllowRedirect Redirect = 0
+	EnableAllowRedirects Redirect = 1
+)
+
+type BasicAuth struct {
+	Username string
+	Password string
+}
 
 // FileUpload represents a file to upload
 type FileUpload struct {
@@ -108,6 +120,7 @@ func BodyXML(v interface{}) *bodyXml {
 
 // Req is a convenient client for initiating requests
 type Req struct {
+	transport        *http.Transport
 	client           *retryablehttp.Client
 	jsonEncOpts      *jsonEncOpts
 	xmlEncOpts       *xmlEncOpts
@@ -163,16 +176,14 @@ func (r *Req) Do(method, rawurl string, vs ...interface{}) (resp *Resp, err erro
 	if rawurl == "" {
 		return nil, errors.New("req: url not specified")
 	}
-
-	req := &retryablehttp.Request{nil, &http.Request{
+	allowRedirects := false
+	req := &retryablehttp.Request{Request: &http.Request{
 		Method:     method,
 		Header:     make(http.Header),
 		Proto:      "HTTP/1.1",
 		ProtoMajor: 1,
 		ProtoMinor: 1,
-	}, retryablehttp.Metrics{}}
-
-
+	}, Metrics: retryablehttp.Metrics{}}
 
 	resp = &Resp{req: req, r: r}
 
@@ -221,6 +232,19 @@ func (r *Req) Do(method, rawurl string, vs ...interface{}) (resp *Resp, err erro
 			} else {
 				formParam.Adds(vv)
 			}
+		case Redirect:
+			if vv == 0 {
+				allowRedirects = false
+			}
+			if vv == 1 {
+				allowRedirects = true
+			}
+
+		case BasicAuth:
+			if vv.Username != "" {
+				req.SetBasicAuth(vv.Username, vv.Password)
+			}
+
 		case QueryParam:
 			queryParam.Adds(vv)
 		case string:
@@ -255,6 +279,8 @@ func (r *Req) Do(method, rawurl string, vs ...interface{}) (resp *Resp, err erro
 			return nil, vv
 		}
 	}
+
+	// disable 302
 
 	if length := req.Header.Get("Content-Length"); length != "" {
 		if l, err := strconv.ParseInt(length, 10, 64); err == nil {
@@ -317,6 +343,10 @@ func (r *Req) Do(method, rawurl string, vs ...interface{}) (resp *Resp, err erro
 
 	if resp.client == nil {
 		resp.client = r.Client()
+	}
+
+	if allowRedirects {
+		resp.client.HTTPClient.CheckRedirect = makeCheckRedirectFunc(true, 0)
 	}
 
 	var response *http.Response
@@ -650,40 +680,48 @@ func (r *Req) Options(url string, v ...interface{}) (*Resp, error) {
 
 // Get execute a http GET request
 func Get(url string, v ...interface{}) (*Resp, error) {
-	return std.Get(url, v...)
+	r := New()
+	return r.Get(url, v...)
 }
 
 // Post execute a http POST request
 func Post(url string, v ...interface{}) (*Resp, error) {
-	return std.Post(url, v...)
+	r := New()
+	return r.Post(url, v...)
 }
 
 // Put execute a http PUT request
 func Put(url string, v ...interface{}) (*Resp, error) {
-	return std.Put(url, v...)
+	r := New()
+	return r.Put(url, v...)
 }
 
 // Head execute a http HEAD request
 func Head(url string, v ...interface{}) (*Resp, error) {
-	return std.Head(url, v...)
+	r := New()
+	return r.Head(url, v...)
 }
 
 // Options execute a http OPTIONS request
 func Options(url string, v ...interface{}) (*Resp, error) {
-	return std.Options(url, v...)
+	r := New()
+	return r.Options(url, v...)
 }
 
 // Delete execute a http DELETE request
 func Delete(url string, v ...interface{}) (*Resp, error) {
-	return std.Delete(url, v...)
+	r := New()
+	return r.Delete(url, v...)
 }
 
 // Patch execute a http PATCH request
 func Patch(url string, v ...interface{}) (*Resp, error) {
-	return std.Patch(url, v...)
+	r := New()
+	return r.Patch(url, v...)
 }
 
 // Do execute request.
 func Do(method, url string, v ...interface{}) (*Resp, error) {
-	return std.Do(method, url, v...)
+	r := New()
+	return r.Do(method, url, v...)
 }
