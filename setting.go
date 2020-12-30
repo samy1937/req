@@ -79,7 +79,7 @@ func newClient() *retryablehttp.Client {
 
 	retryablehttpOptions.RetryWaitMax = 10 * time.Second
 	retryablehttpOptions.RetryMax = 1
-	followRedirects := false
+	followRedirects := true
 	maxRedirects := 0
 
 	transport := &http.Transport{

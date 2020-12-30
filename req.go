@@ -46,6 +46,8 @@ type Host string
 
 type Redirect int
 
+type FormData string
+
 const (
 	DisableAllowRedirect Redirect = 0
 	EnableAllowRedirects Redirect = 1
@@ -55,6 +57,8 @@ type BasicAuth struct {
 	Username string
 	Password string
 }
+
+type Cookies string
 
 // FileUpload represents a file to upload
 type FileUpload struct {
@@ -129,6 +133,11 @@ type Req struct {
 }
 
 // New create a new *Req
+func Sessions() *Req {
+	// default progress reporting interval is 200 milliseconds
+	return &Req{flag: LstdFlags, progressInterval: 200 * time.Millisecond}
+}
+
 func New() *Req {
 	// default progress reporting interval is 200 milliseconds
 	return &Req{flag: LstdFlags, progressInterval: 200 * time.Millisecond}
@@ -239,11 +248,16 @@ func (r *Req) Do(method, rawurl string, vs ...interface{}) (resp *Resp, err erro
 			if vv == 1 {
 				allowRedirects = true
 			}
+		case FormData:
+			setBodyBytes(req.Request, resp, []byte(vv))
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 		case BasicAuth:
 			if vv.Username != "" {
 				req.SetBasicAuth(vv.Username, vv.Password)
 			}
+		case Cookies:
+			req.Header.Add("Cookie", string(vv))
 
 		case QueryParam:
 			queryParam.Adds(vv)
@@ -280,7 +294,9 @@ func (r *Req) Do(method, rawurl string, vs ...interface{}) (resp *Resp, err erro
 		}
 	}
 
-	// disable 302
+	if req.Header.Get("User-Agent") == "" || req.Header.Get("user-agent") == "" {
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.77 Safari/537.36")
+	}
 
 	if length := req.Header.Get("Content-Length"); length != "" {
 		if l, err := strconv.ParseInt(length, 10, 64); err == nil {
